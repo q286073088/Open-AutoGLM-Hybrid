@@ -85,13 +85,13 @@ install_dependencies() {
 # 安装 Python 依赖
 install_python_packages() {
     print_info "安装 Python 依赖包..."
-    
-    # 升级 pip
-    pip install --upgrade pip
-    
+
+    # 注意: Termux 中不能升级 pip，会破坏包管理系统
+    # 直接安装依赖即可
+
     # 安装依赖
     pip install pillow openai requests
-    
+
     print_success "Python 依赖安装完成"
 }
 
