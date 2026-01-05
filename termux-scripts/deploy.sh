@@ -89,8 +89,14 @@ install_python_packages() {
     # 注意: Termux 中不能升级 pip，会破坏包管理系统
     # 直接安装依赖即可
 
+    # 先安装构建工具（如果需要编译包）
+    print_info "检查并安装构建工具..."
+    pkg install rust binutils -y 2>/dev/null || print_warning "Rust安装失败，将尝试使用预编译版本"
+
     # 安装依赖
-    pip install pillow openai requests
+    # 使用兼容Termux的版本，避免需要编译的包
+    pip install pillow requests
+    pip install "openai<1.0.0" || pip install openai
 
     print_success "Python 依赖安装完成"
 }
