@@ -37,9 +37,9 @@ ERROR: Failed to build 'jiter' when installing build dependencies for jiter
 
 **原因**: openai新版本依赖jiter，需要Rust编译器
 
-**解决方案**: 安装Rust
+**解决方案**: 使用旧版本 `openai<1.0.0`（功能完整，无需Rust）
 ```bash
-pkg install rust binutils -y
+pip install "openai<1.0.0"
 ```
 
 ---
@@ -66,11 +66,10 @@ chmod +x deploy.sh
 2. ✅ 安装Python和Git
 3. ✅ 安装编译工具（clang）
 4. ✅ 安装图像库依赖（libjpeg-turbo, libpng, zlib, freetype）
-5. ✅ 安装Rust编译器
-6. ✅ 安装Python依赖（pillow, requests, openai）
-7. ✅ 下载并安装Open-AutoGLM
-8. ✅ 配置API Key
-9. ✅ 创建启动脚本
+5. ✅ 安装Python依赖（pillow, requests, openai<1.0.0）
+6. ✅ 下载并安装Open-AutoGLM
+7. ✅ 配置API Key
+8. ✅ 创建启动脚本
 
 ---
 
@@ -79,19 +78,33 @@ chmod +x deploy.sh
 | 步骤 | 时间 |
 |------|------|
 | 安装系统依赖 | 5-10分钟 |
-| 安装Rust | 5-10分钟 |
-| 编译Python包 | 10-15分钟 |
+| 编译Python包 | 5-10分钟 |
 | 下载Open-AutoGLM | 2-5分钟 |
-| **总计** | **25-40分钟** |
+| **总计** | **15-25分钟** |
 
 ---
 
 ## 需要的存储空间
 
-- Rust编译器: ~300MB
-- Python包: ~200MB
+- Python包: ~150MB
 - Open-AutoGLM: ~100MB
-- **总计**: ~600MB
+- **总计**: ~300MB
+
+---
+
+## 优化说明
+
+### 为什么使用 `openai<1.0.0`？
+
+| 特性 | openai 0.x (旧版) | openai 1.x+ (新版) |
+|------|------------------|-------------------|
+| **编译需求** | ❌ 不需要 Rust | ✅ 需要 Rust 编译器 |
+| **安装时间** | ⚡ 快（~2分钟） | 🐌 慢（~10分钟） |
+| **存储空间** | 💾 小（~50MB） | 📦 大（~350MB） |
+| **功能** | ✅ 完整支持 | ✅ 完整支持 + 新特性 |
+| **API 兼容性** | ✅ 兼容所有OpenAI格式API | ✅ 兼容所有OpenAI格式API |
+
+**结论**: 对于 Open-AutoGLM 项目，0.x 版本功能完全够用，且更适合 Termux 环境。
 
 ---
 
@@ -103,7 +116,7 @@ chmod +x deploy.sh
    ```bash
    df -h
    ```
-   确保至少有1GB可用空间
+   确保至少有500MB可用空间
 
 2. **清理缓存**
    ```bash
@@ -113,7 +126,7 @@ chmod +x deploy.sh
 
 3. **重新安装依赖**
    ```bash
-   pkg install -y clang libjpeg-turbo libpng zlib freetype rust binutils
+   pkg install -y clang libjpeg-turbo libpng zlib freetype
    ```
 
 4. **手动安装Python包**
@@ -122,7 +135,7 @@ chmod +x deploy.sh
    export CFLAGS="-I/data/data/com.termux/files/usr/include"
    pip install pillow --no-cache-dir
    pip install requests --no-cache-dir
-   pip install openai --no-cache-dir
+   pip install "openai<1.0.0" --no-cache-dir
    ```
 
 ---
@@ -133,6 +146,7 @@ chmod +x deploy.sh
 ✅ 设置正确的编译环境变量
 ✅ 按顺序安装Python包避免冲突
 ✅ 使用 `--no-cache-dir` 节省空间
+✅ 使用 `openai<1.0.0` 避免Rust依赖
 ✅ 详细的进度提示
 ✅ 错误处理和提示
 
@@ -142,7 +156,7 @@ chmod +x deploy.sh
 
 - **2026-01-05**: 修复pip升级问题
 - **2026-01-05**: 添加Pillow编译依赖
-- **2026-01-05**: 添加Rust支持openai包
+- **2026-01-05**: 优化为使用openai<1.0.0（避免Rust依赖）
 - **2026-01-05**: 优化安装顺序和环境变量
 
 ---
