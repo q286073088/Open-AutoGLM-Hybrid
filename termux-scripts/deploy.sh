@@ -174,8 +174,8 @@ configure_grsai() {
     cat > ~/.autoglm/config.sh << EOF
 #!/data/data/com.termux/files/usr/bin/bash
 
-# GRS AI 配置
-export PHONE_AGENT_BASE_URL="https://api.grsai.com/v1"
+# AI API 配置（支持OpenAI兼容接口）
+export PHONE_AGENT_BASE_URL="https://api.zhongjixun.com/v1"
 export PHONE_AGENT_API_KEY="$api_key"
 export PHONE_AGENT_MODEL="gpt-4-vision-preview"
 
