@@ -59,7 +59,7 @@ update_packages() {
 # 安装必要软件
 install_dependencies() {
     print_info "安装必要软件..."
-    
+
     # 检查并安装 Python
     if ! command -v python &> /dev/null; then
         print_info "安装 Python..."
@@ -67,7 +67,7 @@ install_dependencies() {
     else
         print_success "Python 已安装: $(python --version)"
     fi
-    
+
     # 检查并安装 Git
     if ! command -v git &> /dev/null; then
         print_info "安装 Git..."
@@ -75,10 +75,18 @@ install_dependencies() {
     else
         print_success "Git 已安装: $(git --version)"
     fi
-    
+
     # 安装其他工具
     pkg install curl wget -y
-    
+
+    # 安装编译工具和依赖库（Pillow和其他包需要）
+    print_info "安装编译工具和依赖库..."
+    pkg install clang libjpeg-turbo libpng zlib freetype -y
+
+    # 安装Rust（openai包需要）
+    print_info "安装Rust编译器（可能需要几分钟）..."
+    pkg install rust binutils -y
+
     print_success "必要软件安装完成"
 }
 
@@ -89,14 +97,19 @@ install_python_packages() {
     # 注意: Termux 中不能升级 pip，会破坏包管理系统
     # 直接安装依赖即可
 
-    # 先安装构建工具（如果需要编译包）
-    print_info "检查并安装构建工具..."
-    pkg install rust binutils -y 2>/dev/null || print_warning "Rust安装失败，将尝试使用预编译版本"
+    # 设置环境变量，帮助编译过程找到库
+    export LDFLAGS="-L/data/data/com.termux/files/usr/lib"
+    export CFLAGS="-I/data/data/com.termux/files/usr/include"
 
-    # 安装依赖
-    # 使用兼容Termux的版本，避免需要编译的包
-    pip install pillow requests
-    pip install "openai<1.0.0" || pip install openai
+    # 安装依赖（按顺序安装，避免依赖冲突）
+    print_info "安装 Pillow（图像处理库）..."
+    pip install pillow --no-cache-dir
+
+    print_info "安装 requests（HTTP库）..."
+    pip install requests --no-cache-dir
+
+    print_info "安装 openai（AI API库）..."
+    pip install openai --no-cache-dir
 
     print_success "Python 依赖安装完成"
 }
