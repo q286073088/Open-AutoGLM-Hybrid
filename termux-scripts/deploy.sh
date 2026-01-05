@@ -79,13 +79,9 @@ install_dependencies() {
     # 安装其他工具
     pkg install curl wget -y
 
-    # 安装编译工具和依赖库（Pillow和其他包需要）
+    # 安装编译工具和依赖库（Pillow需要）
     print_info "安装编译工具和依赖库..."
     pkg install clang libjpeg-turbo libpng zlib freetype -y
-
-    # 安装Rust（openai包需要）
-    print_info "安装Rust编译器（可能需要几分钟）..."
-    pkg install rust binutils -y
 
     print_success "必要软件安装完成"
 }
@@ -108,8 +104,8 @@ install_python_packages() {
     print_info "安装 requests（HTTP库）..."
     pip install requests --no-cache-dir
 
-    print_info "安装 openai（AI API库）..."
-    pip install openai --no-cache-dir
+    print_info "安装 openai（AI API库，使用0.x版本避免Rust依赖）..."
+    pip install "openai<1.0.0" --no-cache-dir
 
     print_success "Python 依赖安装完成"
 }
