@@ -177,7 +177,7 @@ configure_grsai() {
 # AI API 配置（支持OpenAI兼容接口）
 export PHONE_AGENT_BASE_URL="https://api.zhongjixun.com/v1"
 export PHONE_AGENT_API_KEY="$api_key"
-export PHONE_AGENT_MODEL="gpt-4-vision-preview"
+export PHONE_AGENT_MODEL="gpt-5-chat-latest"
 
 # AutoGLM Helper 配置
 export AUTOGLM_HELPER_URL="http://localhost:8080"
