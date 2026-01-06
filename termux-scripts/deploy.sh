@@ -217,7 +217,10 @@ EOF
 # 创建启动脚本
 create_launcher() {
     print_info "创建启动脚本..."
-    
+
+    # 创建 ~/bin 目录（如果不存在）
+    mkdir -p ~/bin
+
     # 创建 autoglm 命令
     cat > ~/bin/autoglm << 'LAUNCHER_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
@@ -229,14 +232,14 @@ source ~/.autoglm/config.sh
 cd ~/Open-AutoGLM
 python -m phone_agent.cli
 LAUNCHER_EOF
-    
+
     chmod +x ~/bin/autoglm
-    
+
     # 确保 ~/bin 在 PATH 中
     if ! grep -q 'export PATH=$PATH:~/bin' ~/.bashrc; then
         echo 'export PATH=$PATH:~/bin' >> ~/.bashrc
     fi
-    
+
     print_success "启动脚本创建完成"
 }
 
