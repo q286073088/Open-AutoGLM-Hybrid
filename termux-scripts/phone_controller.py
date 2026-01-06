@@ -1,22 +1,18 @@
 """
-Open-AutoGLM 混合方案 - 手机控制器（使用 curl）
-版本: 1.0.1
+Open-AutoGLM 混合方案 - 手机控制器（使用 http.client）
+版本: 1.0.2
 
-支持两种控制模式:
-1. 无障碍服务模式 (优先) - 通过 AutoGLM Helper APP
-2. LADB 模式 (备用) - 通过 ADB 连接
-
-使用 curl 替代 requests 库，解决 Termux 网络问题
+使用 Python 内置 http.client，解决 Termux 中 subprocess 网络问题
 """
 
-import os
-import subprocess
 import json
 import base64
 import logging
 from typing import Optional
 from PIL import Image
 from io import BytesIO
+from http.client import HTTPConnection
+from urllib.parse import urlparse
 
 # 配置日志
 logging.basicConfig(
@@ -26,94 +22,82 @@ logging.basicConfig(
 logger = logging.getLogger('PhoneController')
 
 
-def curl_get(url: str, timeout: int = 3) -> Optional[dict]:
-    """使用 curl 发送 GET 请求"""
+def http_get(url: str, timeout: int = 3) -> Optional[dict]:
+    """使用 http.client 发送 GET 请求"""
     try:
-        result = subprocess.run(
-            ['curl', '-s', '-m', str(timeout), url],
-            capture_output=True,
-            text=True,
-            timeout=timeout + 1
-        )
-        if result.returncode == 0 and result.stdout:
-            return json.loads(result.stdout)
+        parsed = urlparse(url)
+        conn = HTTPConnection(parsed.netloc, timeout=timeout)
+        conn.request("GET", parsed.path or "/")
+        response = conn.getresponse()
+
+        if response.status == 200:
+            data = json.loads(response.read().decode())
+            conn.close()
+            return data
+
+        conn.close()
         return None
     except Exception as e:
-        logger.debug(f"curl GET 失败: {e}")
+        logger.debug(f"HTTP GET 失败: {e}")
         return None
 
 
-def curl_post(url: str, data: dict, timeout: int = 5) -> Optional[dict]:
-    """使用 curl 发送 POST 请求"""
+def http_post(url: str, data: dict, timeout: int = 5) -> Optional[dict]:
+    """使用 http.client 发送 POST 请求"""
     try:
-        result = subprocess.run(
-            ['curl', '-s', '-m', str(timeout), '-X', 'POST',
-             '-H', 'Content-Type: application/json',
-             '-d', json.dumps(data), url],
-            capture_output=True,
-            text=True,
-            timeout=timeout + 1
-        )
-        if result.returncode == 0 and result.stdout:
-            return json.loads(result.stdout)
+        parsed = urlparse(url)
+        conn = HTTPConnection(parsed.netloc, timeout=timeout)
+
+        body = json.dumps(data).encode()
+        headers = {'Content-Type': 'application/json'}
+
+        conn.request("POST", parsed.path or "/", body, headers)
+        response = conn.getresponse()
+
+        if response.status == 200:
+            result = json.loads(response.read().decode())
+            conn.close()
+            return result
+
+        conn.close()
         return None
     except Exception as e:
-        logger.debug(f"curl POST 失败: {e}")
+        logger.debug(f"HTTP POST 失败: {e}")
         return None
 
 
 class PhoneController:
     """手机控制器 - 支持自动降级"""
 
-    # 控制模式
-    MODE_ACCESSIBILITY = "accessibility"  # 无障碍服务模式
-    MODE_LADB = "ladb"  # LADB 模式
-    MODE_NONE = "none"  # 无可用模式
+    MODE_ACCESSIBILITY = "accessibility"
+    MODE_NONE = "none"
 
     def __init__(self, helper_url: str = "http://localhost:8080"):
-        """
-        初始化手机控制器
-
-        Args:
-            helper_url: AutoGLM Helper 的 URL
-        """
         self.helper_url = helper_url
         self.mode = self.MODE_NONE
-        self.adb_device = None
-
-        # 自动检测可用模式
         self._detect_mode()
 
     def _detect_mode(self):
         """检测可用的控制模式"""
         logger.info("检测可用的控制模式...")
 
-        # 1. 尝试无障碍服务模式
         if self._try_accessibility_service():
             self.mode = self.MODE_ACCESSIBILITY
             logger.info(f"✅ 使用无障碍服务模式 ({self.helper_url})")
             return
 
-        # 2. 降级到 LADB 模式
-        if self._try_ladb():
-            self.mode = self.MODE_LADB
-            logger.warning(f"⚠️ 降级到 LADB 模式 (设备: {self.adb_device})")
-            return
-
-        # 3. 都不可用
         self.mode = self.MODE_NONE
         logger.error("❌ 无可用控制方式")
         raise Exception(
             "无法连接到手机控制服务！\n"
             "请确保:\n"
             "1. AutoGLM Helper 已运行并开启无障碍权限\n"
-            "2. 或者 LADB 已配对并运行\n"
         )
 
     def _try_accessibility_service(self) -> bool:
         """尝试连接无障碍服务"""
         try:
-            data = curl_get(f"{self.helper_url}/status", timeout=3)
+            data = http_get(f"{self.helper_url}/status", timeout=3)
 
             if data and data.get('status') == 'ok':
                 if data.get('accessibility_enabled'):
@@ -127,61 +111,13 @@ class PhoneController:
             logger.debug(f"无障碍服务连接失败: {e}")
             return False
 
-    def _try_ladb(self) -> bool:
-        """尝试连接 LADB"""
-        try:
-            # 检查 adb 是否可用
-            result = subprocess.run(
-                ['adb', 'devices'],
-                capture_output=True,
-                text=True,
-                timeout=3
-            )
-
-            if result.returncode != 0:
-                logger.debug("ADB 命令不可用")
-                return False
-
-            # 解析设备列表
-            lines = result.stdout.strip().split('\n')[1:]  # 跳过标题行
-            devices = [line.split('\t')[0] for line in lines if '\tdevice' in line]
-
-            if not devices:
-                logger.debug("未找到已连接的 ADB 设备")
-                return False
-
-            # 使用第一个设备
-            self.adb_device = devices[0]
-            logger.info(f"找到 ADB 设备: {self.adb_device}")
-
-            # 测试连接
-            test_result = subprocess.run(
-                ['adb', '-s', self.adb_device, 'shell', 'echo', 'test'],
-                capture_output=True,
-                timeout=3
-            )
-
-            return test_result.returncode == 0
-
-        except Exception as e:
-            logger.debug(f"LADB 连接失败: {e}")
-            return False
-
     def get_mode(self) -> str:
-        """获取当前控制模式"""
         return self.mode
 
     def screenshot(self) -> Optional[Image.Image]:
-        """
-        截取屏幕
-
-        Returns:
-            PIL.Image 对象，失败返回 None
-        """
+        """截取屏幕"""
         if self.mode == self.MODE_ACCESSIBILITY:
             return self._screenshot_accessibility()
-        elif self.mode == self.MODE_LADB:
-            return self._screenshot_ladb()
         else:
             logger.error("无可用的截图方式")
             return None
@@ -189,71 +125,25 @@ class PhoneController:
     def _screenshot_accessibility(self) -> Optional[Image.Image]:
         """通过无障碍服务截图"""
         try:
-            data = curl_get(f"{self.helper_url}/screenshot", timeout=10)
+            data = http_get(f"{self.helper_url}/screenshot", timeout=10)
 
             if data and data.get('success'):
-                # 解码 Base64 图片
                 image_data = base64.b64decode(data['image'])
                 image = Image.open(BytesIO(image_data))
-                logger.debug(f"截图成功 (无障碍): {image.size}")
+                logger.debug(f"截图成功: {image.size}")
                 return image
 
             logger.error("截图失败")
             return None
 
         except Exception as e:
-            logger.error(f"截图失败 (无障碍): {e}")
-            return None
-
-    def _screenshot_ladb(self) -> Optional[Image.Image]:
-        """通过 LADB 截图"""
-        try:
-            # 截图到设备
-            subprocess.run(
-                ['adb', '-s', self.adb_device, 'shell', 'screencap', '-p', '/sdcard/autoglm_screenshot.png'],
-                check=True,
-                timeout=5
-            )
-
-            # 拉取到本地
-            local_path = '/tmp/autoglm_screenshot.png'
-            subprocess.run(
-                ['adb', '-s', self.adb_device, 'pull', '/sdcard/autoglm_screenshot.png', local_path],
-                check=True,
-                timeout=5
-            )
-
-            # 打开图片
-            image = Image.open(local_path)
-            logger.debug(f"截图成功 (LADB): {image.size}")
-
-            # 清理临时文件
-            subprocess.run(
-                ['adb', '-s', self.adb_device, 'shell', 'rm', '/sdcard/autoglm_screenshot.png'],
-                timeout=3
-            )
-
-            return image
-
-        except Exception as e:
-            logger.error(f"截图失败 (LADB): {e}")
+            logger.error(f"截图失败: {e}")
             return None
 
     def tap(self, x: int, y: int) -> bool:
-        """
-        执行点击操作
-
-        Args:
-            x: X 坐标
-            y: Y 坐标
-
-        Returns:
-            是否成功
-        """
+        """执行点击操作"""
         if self.mode == self.MODE_ACCESSIBILITY:
             return self._tap_accessibility(x, y)
-        elif self.mode == self.MODE_LADB:
-            return self._tap_ladb(x, y)
         else:
             logger.error("无可用的点击方式")
             return False
@@ -261,7 +151,7 @@ class PhoneController:
     def _tap_accessibility(self, x: int, y: int) -> bool:
         """通过无障碍服务点击"""
         try:
-            data = curl_post(
+            data = http_post(
                 f"{self.helper_url}/tap",
                 {'x': x, 'y': y},
                 timeout=5
@@ -275,43 +165,13 @@ class PhoneController:
             return False
 
         except Exception as e:
-            logger.error(f"点击失败 (无障碍): {e}")
-            return False
-
-    def _tap_ladb(self, x: int, y: int) -> bool:
-        """通过 LADB 点击"""
-        try:
-            result = subprocess.run(
-                ['adb', '-s', self.adb_device, 'shell', 'input', 'tap', str(x), str(y)],
-                check=True,
-                timeout=3
-            )
-
-            logger.debug(f"点击 ({x}, {y}): True")
-            return True
-
-        except Exception as e:
-            logger.error(f"点击失败 (LADB): {e}")
+            logger.error(f"点击失败: {e}")
             return False
 
     def swipe(self, x1: int, y1: int, x2: int, y2: int, duration: int = 300) -> bool:
-        """
-        执行滑动操作
-
-        Args:
-            x1: 起点 X 坐标
-            y1: 起点 Y 坐标
-            x2: 终点 X 坐标
-            y2: 终点 Y 坐标
-            duration: 持续时间 (毫秒)
-
-        Returns:
-            是否成功
-        """
+        """执行滑动操作"""
         if self.mode == self.MODE_ACCESSIBILITY:
             return self._swipe_accessibility(x1, y1, x2, y2, duration)
-        elif self.mode == self.MODE_LADB:
-            return self._swipe_ladb(x1, y1, x2, y2, duration)
         else:
             logger.error("无可用的滑动方式")
             return False
@@ -319,7 +179,7 @@ class PhoneController:
     def _swipe_accessibility(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> bool:
         """通过无障碍服务滑动"""
         try:
-            data = curl_post(
+            data = http_post(
                 f"{self.helper_url}/swipe",
                 {'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2, 'duration': duration},
                 timeout=10
@@ -333,40 +193,13 @@ class PhoneController:
             return False
 
         except Exception as e:
-            logger.error(f"滑动失败 (无障碍): {e}")
-            return False
-
-    def _swipe_ladb(self, x1: int, y1: int, x2: int, y2: int, duration: int) -> bool:
-        """通过 LADB 滑动"""
-        try:
-            result = subprocess.run(
-                ['adb', '-s', self.adb_device, 'shell', 'input', 'swipe',
-                 str(x1), str(y1), str(x2), str(y2), str(duration)],
-                check=True,
-                timeout=5
-            )
-
-            logger.debug(f"滑动 ({x1},{y1}) -> ({x2},{y2}): True")
-            return True
-
-        except Exception as e:
-            logger.error(f"滑动失败 (LADB): {e}")
+            logger.error(f"滑动失败: {e}")
             return False
 
     def input_text(self, text: str) -> bool:
-        """
-        输入文字
-
-        Args:
-            text: 要输入的文字
-
-        Returns:
-            是否成功
-        """
+        """输入文字"""
         if self.mode == self.MODE_ACCESSIBILITY:
             return self._input_accessibility(text)
-        elif self.mode == self.MODE_LADB:
-            return self._input_ladb(text)
         else:
             logger.error("无可用的输入方式")
             return False
@@ -374,7 +207,7 @@ class PhoneController:
     def _input_accessibility(self, text: str) -> bool:
         """通过无障碍服务输入"""
         try:
-            data = curl_post(
+            data = http_post(
                 f"{self.helper_url}/input",
                 {'text': text},
                 timeout=5
@@ -388,26 +221,7 @@ class PhoneController:
             return False
 
         except Exception as e:
-            logger.error(f"输入失败 (无障碍): {e}")
-            return False
-
-    def _input_ladb(self, text: str) -> bool:
-        """通过 LADB 输入"""
-        try:
-            # ADB input text 不支持中文，需要使用其他方法
-            # 这里简化处理，仅支持英文
-            escaped_text = text.replace(' ', '%s')
-            result = subprocess.run(
-                ['adb', '-s', self.adb_device, 'shell', 'input', 'text', escaped_text],
-                check=True,
-                timeout=5
-            )
-
-            logger.debug(f"输入文字: True")
-            return True
-
-        except Exception as e:
-            logger.error(f"输入失败 (LADB): {e}")
+            logger.error(f"输入失败: {e}")
             return False
 
 
@@ -419,7 +233,6 @@ if __name__ == '__main__':
         controller = PhoneController()
         print(f"当前模式: {controller.get_mode()}")
 
-        # 测试截图
         print("测试截图...")
         img = controller.screenshot()
         if img:
