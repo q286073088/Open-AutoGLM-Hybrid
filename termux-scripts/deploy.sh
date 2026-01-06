@@ -104,6 +104,9 @@ install_python_packages() {
     print_info "安装 requests（HTTP库）..."
     pip install requests --no-cache-dir
 
+    print_info "安装 pydantic v1（避免Rust依赖）..."
+    pip install "pydantic<2.0.0" --no-cache-dir
+
     print_info "安装 openai（AI API库，使用0.x版本避免Rust依赖）..."
     pip install "openai<1.0.0" --no-cache-dir
 
