@@ -1,17 +1,17 @@
 """
-Open-AutoGLM 混合方案 - 手机控制器（使用 http.client）
-版本: 1.0.2
+Open-AutoGLM 混合方案 - 手机控制器（使用原始 socket）
+版本: 1.0.3
 
-使用 Python 内置 http.client，解决 Termux 中 subprocess 网络问题
+使用原始 socket 实现 HTTP 请求，解决 Termux 中 http.client 兼容性问题
 """
 
 import json
 import base64
 import logging
+import socket
 from typing import Optional
 from PIL import Image
 from io import BytesIO
-from http.client import HTTPConnection
 from urllib.parse import urlparse
 
 # 配置日志
@@ -23,44 +23,107 @@ logger = logging.getLogger('PhoneController')
 
 
 def http_get(url: str, timeout: int = 3) -> Optional[dict]:
-    """使用 http.client 发送 GET 请求"""
+    """使用原始 socket 发送 GET 请求"""
     try:
         parsed = urlparse(url)
-        conn = HTTPConnection(parsed.netloc, timeout=timeout)
-        conn.request("GET", parsed.path or "/")
-        response = conn.getresponse()
+        host = parsed.hostname or 'localhost'
+        port = parsed.port or 8080
+        path = parsed.path or "/"
 
-        if response.status == 200:
-            data = json.loads(response.read().decode())
-            conn.close()
-            return data
+        # 创建 socket 连接
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((host, port))
 
-        conn.close()
-        return None
+        # 构造 HTTP 请求
+        request = f"GET {path} HTTP/1.0\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+        sock.sendall(request.encode())
+
+        # 读取响应
+        response = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+
+        sock.close()
+
+        # 解析响应
+        response_str = response.decode('utf-8', errors='ignore')
+
+        # 分离头部和主体
+        if '\r\n\r\n' in response_str:
+            headers, body = response_str.split('\r\n\r\n', 1)
+        else:
+            return None
+
+        # 检查状态码
+        if '200 OK' not in headers:
+            return None
+
+        # 解析 JSON
+        return json.loads(body)
+
     except Exception as e:
         logger.debug(f"HTTP GET 失败: {e}")
         return None
 
 
 def http_post(url: str, data: dict, timeout: int = 5) -> Optional[dict]:
-    """使用 http.client 发送 POST 请求"""
+    """使用原始 socket 发送 POST 请求"""
     try:
         parsed = urlparse(url)
-        conn = HTTPConnection(parsed.netloc, timeout=timeout)
+        host = parsed.hostname or 'localhost'
+        port = parsed.port or 8080
+        path = parsed.path or "/"
 
-        body = json.dumps(data).encode()
-        headers = {'Content-Type': 'application/json'}
+        # 准备请求体
+        body = json.dumps(data)
+        body_bytes = body.encode('utf-8')
 
-        conn.request("POST", parsed.path or "/", body, headers)
-        response = conn.getresponse()
+        # 创建 socket 连接
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect((host, port))
 
-        if response.status == 200:
-            result = json.loads(response.read().decode())
-            conn.close()
-            return result
+        # 构造 HTTP 请求
+        request = (
+            f"POST {path} HTTP/1.0\r\n"
+            f"Host: {host}\r\n"
+            f"Content-Type: application/json\r\n"
+            f"Content-Length: {len(body_bytes)}\r\n"
+            f"Connection: close\r\n"
+            f"\r\n"
+        )
+        sock.sendall(request.encode() + body_bytes)
 
-        conn.close()
-        return None
+        # 读取响应
+        response = b""
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+
+        sock.close()
+
+        # 解析响应
+        response_str = response.decode('utf-8', errors='ignore')
+
+        # 分离头部和主体
+        if '\r\n\r\n' in response_str:
+            headers, body = response_str.split('\r\n\r\n', 1)
+        else:
+            return None
+
+        # 检查状态码
+        if '200 OK' not in headers:
+            return None
+
+        # 解析 JSON
+        return json.loads(body)
+
     except Exception as e:
         logger.debug(f"HTTP POST 失败: {e}")
         return None
