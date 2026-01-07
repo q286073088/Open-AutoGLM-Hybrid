@@ -4,8 +4,6 @@ import android.util.Log
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
-import java.io.OutputStreamWriter
-import java.io.PrintWriter
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.SocketTimeoutException
@@ -81,20 +79,23 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
     }
 
     private fun handleClient(socket: Socket) {
+        val startTime = System.currentTimeMillis()
         try {
+            Log.d(TAG, "[${Thread.currentThread().id}] Handling client connection")
+
             // 设置超时
             socket.soTimeout = 5000  // 5秒读取超时
 
             val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-            val writer = PrintWriter(OutputStreamWriter(socket.getOutputStream()), true)
+            val outputStream = socket.getOutputStream()
 
             // 读取请求行
             val requestLine = reader.readLine() ?: return
-            Log.i(TAG, "Request: $requestLine")
+            Log.i(TAG, "[${Thread.currentThread().id}] Request: $requestLine")
 
             val parts = requestLine.split(" ")
             if (parts.size < 3) {
-                sendError(writer, 400, "Bad Request")
+                sendError(outputStream, 400, "Bad Request")
                 return
             }
 
@@ -114,6 +115,8 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
                 }
             }
 
+            Log.d(TAG, "[${Thread.currentThread().id}] Headers parsed, processing request")
+
             // 读取请求体（如果有）
             var body = ""
             val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
@@ -125,19 +128,24 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
 
             // 处理请求
             val response = handleRequest(method, uri, body)
+            Log.d(TAG, "[${Thread.currentThread().id}] Request processed, sending response")
 
             // 发送响应
-            sendResponse(writer, response)
+            sendResponse(outputStream, response)
+
+            val elapsed = System.currentTimeMillis() - startTime
+            Log.i(TAG, "[${Thread.currentThread().id}] Response sent in ${elapsed}ms")
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling client", e)
+            Log.e(TAG, "[${Thread.currentThread().id}] Error handling client", e)
         } finally {
             // 确保关闭连接
             try {
                 socket.close()
-                Log.d(TAG, "Connection closed")
+                val elapsed = System.currentTimeMillis() - startTime
+                Log.d(TAG, "[${Thread.currentThread().id}] Connection closed after ${elapsed}ms")
             } catch (e: Exception) {
-                Log.e(TAG, "Error closing socket", e)
+                Log.e(TAG, "[${Thread.currentThread().id}] Error closing socket", e)
             }
         }
     }
@@ -162,8 +170,8 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
         val json = JSONObject()
         json.put("status", "ok")
         json.put("service", "AutoGLM Helper")
-        json.put("version", "1.0.4")
-        json.put("build", "20260107-simple-http")
+        json.put("version", "1.0.5")
+        json.put("build", "20260107-debug-http")
         json.put("accessibility_enabled", service.isAccessibilityEnabled())
 
         return HttpResponse(200, "application/json", json.toString())
@@ -227,30 +235,36 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
         return HttpResponse(200, "application/json", response.toString())
     }
 
-    private fun sendResponse(writer: PrintWriter, response: HttpResponse) {
-        val body = response.body.toByteArray(Charsets.UTF_8)
+    private fun sendResponse(outputStream: java.io.OutputStream, response: HttpResponse) {
+        try {
+            val body = response.body.toByteArray(Charsets.UTF_8)
 
-        // 发送状态行
-        writer.print("HTTP/1.0 ${response.statusCode} ${getStatusText(response.statusCode)}\r\n")
+            // 构建完整的 HTTP 响应
+            val statusLine = "HTTP/1.0 ${response.statusCode} ${getStatusText(response.statusCode)}\r\n"
+            val headers = StringBuilder()
+            headers.append("Content-Type: ${response.contentType}\r\n")
+            headers.append("Content-Length: ${body.size}\r\n")
+            headers.append("Connection: close\r\n")
+            headers.append("Server: AutoGLM-Helper/1.0\r\n")
+            headers.append("\r\n")
 
-        // 发送响应头
-        writer.print("Content-Type: ${response.contentType}\r\n")
-        writer.print("Content-Length: ${body.size}\r\n")
-        writer.print("Connection: close\r\n")
-        writer.print("Server: AutoGLM-Helper/1.0\r\n")
-        writer.print("\r\n")
+            // 一次性写入所有数据
+            outputStream.write(statusLine.toByteArray(Charsets.UTF_8))
+            outputStream.write(headers.toString().toByteArray(Charsets.UTF_8))
+            outputStream.write(body)
+            outputStream.flush()
 
-        // 发送响应体
-        writer.print(response.body)
-        writer.flush()
-
-        Log.d(TAG, "Response sent: ${response.statusCode}")
+            Log.d(TAG, "Response sent: ${response.statusCode}, body size: ${body.size}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending response", e)
+            throw e
+        }
     }
 
-    private fun sendError(writer: PrintWriter, statusCode: Int, message: String) {
+    private fun sendError(outputStream: java.io.OutputStream, statusCode: Int, message: String) {
         val json = JSONObject()
         json.put("error", message)
-        sendResponse(writer, HttpResponse(statusCode, "application/json", json.toString()))
+        sendResponse(outputStream, HttpResponse(statusCode, "application/json", json.toString()))
     }
 
     private fun getStatusText(statusCode: Int): String {
