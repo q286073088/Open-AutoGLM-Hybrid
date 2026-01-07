@@ -15,7 +15,7 @@ class HttpServer(private val service: AutoGLMAccessibilityService, port: Int = 8
         val uri = session.uri
         val method = session.method
 
-        Log.d(TAG, "Request: $method $uri")
+        Log.i(TAG, "Received request: $method $uri")
 
         return try {
             val response = when {
@@ -30,17 +30,18 @@ class HttpServer(private val service: AutoGLMAccessibilityService, port: Int = 8
                     """{"error": "Not found"}"""
                 )
             }
-            // 强制关闭连接，避免客户端等待
-            response.addHeader("Connection", "close")
+            // 强制关闭连接，避免客户端等待 (使用 NanoHTTPD 推荐的 API)
+            response.closeConnection(true)
+            Log.i(TAG, "Response sent: $method $uri - Connection: close")
             response
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling request", e)
+            Log.e(TAG, "Error handling request: $method $uri", e)
             val errorResponse = newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
                 "application/json",
                 """{"error": "${e.message}"}"""
             )
-            errorResponse.addHeader("Connection", "close")
+            errorResponse.closeConnection(true)
             errorResponse
         }
     }
