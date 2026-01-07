@@ -79,24 +79,35 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
     }
 
     private fun handleClient(socket: Socket) {
+        val clientId = socket.inetAddress.hostAddress + ":" + socket.port
+        Log.i(TAG, "[$clientId] Client connected")
+
         try {
             // 禁用 Nagle 算法，立即发送数据
             socket.tcpNoDelay = true
+            Log.d(TAG, "[$clientId] TCP_NODELAY enabled")
+
             // 设置超时
             socket.soTimeout = 5000  // 5秒读取超时
+            Log.d(TAG, "[$clientId] Socket timeout set to 5000ms")
 
             val inputStream = socket.getInputStream()
             val outputStream = socket.getOutputStream()
             val reader = BufferedReader(InputStreamReader(inputStream))
 
             // 读取请求行
-            val requestLine = reader.readLine() ?: return
-            Log.i(TAG, "Request: $requestLine")
+            Log.d(TAG, "[$clientId] Reading request line...")
+            val requestLine = reader.readLine()
+            if (requestLine == null) {
+                Log.w(TAG, "[$clientId] Request line is null, closing connection")
+                return
+            }
+            Log.i(TAG, "[$clientId] Request: $requestLine")
 
             val parts = requestLine.split(" ")
             if (parts.size < 3) {
+                Log.w(TAG, "[$clientId] Invalid request format")
                 sendError(outputStream, 400, "Bad Request")
-                // 确保数据发送
                 outputStream.flush()
                 socket.shutdownOutput()
                 return
@@ -104,17 +115,25 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
 
             val method = parts[0]
             val uri = parts[1]
+            Log.d(TAG, "[$clientId] Method: $method, URI: $uri")
 
             // 读取请求头
+            Log.d(TAG, "[$clientId] Reading headers...")
             val headers = mutableMapOf<String, String>()
             var line: String?
+            var headerCount = 0
             while (reader.readLine().also { line = it } != null) {
-                if (line!!.isEmpty()) break
+                if (line!!.isEmpty()) {
+                    Log.d(TAG, "[$clientId] Headers complete, count: $headerCount")
+                    break
+                }
+                headerCount++
                 val colonIndex = line!!.indexOf(':')
                 if (colonIndex > 0) {
                     val key = line!!.substring(0, colonIndex).trim().lowercase()
                     val value = line!!.substring(colonIndex + 1).trim()
                     headers[key] = value
+                    Log.d(TAG, "[$clientId] Header: $key = $value")
                 }
             }
 
@@ -122,32 +141,42 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
             var body = ""
             val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
             if (contentLength > 0) {
+                Log.d(TAG, "[$clientId] Reading body, content-length: $contentLength")
                 val buffer = CharArray(contentLength)
                 reader.read(buffer, 0, contentLength)
                 body = String(buffer)
+                Log.d(TAG, "[$clientId] Body read complete")
             }
 
             // 处理请求
+            Log.d(TAG, "[$clientId] Processing request...")
             val response = handleRequest(method, uri, body)
+            Log.d(TAG, "[$clientId] Request processed, status: ${response.statusCode}")
 
             // 发送响应
+            Log.d(TAG, "[$clientId] Sending response...")
             sendResponse(outputStream, response)
+            Log.i(TAG, "[$clientId] Response sent successfully")
 
             // 确保数据发送完毕
+            Log.d(TAG, "[$clientId] Flushing output stream...")
             outputStream.flush()
+            Log.d(TAG, "[$clientId] Output stream flushed")
 
             // 关闭输出流，通知客户端数据发送完毕
+            Log.d(TAG, "[$clientId] Shutting down output...")
             socket.shutdownOutput()
+            Log.d(TAG, "[$clientId] Output shutdown complete")
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling client", e)
+            Log.e(TAG, "[$clientId] Error handling client: ${e.message}", e)
         } finally {
             // 确保关闭连接
             try {
                 socket.close()
-                Log.d(TAG, "Connection closed")
+                Log.i(TAG, "[$clientId] Connection closed")
             } catch (e: Exception) {
-                Log.e(TAG, "Error closing socket", e)
+                Log.e(TAG, "[$clientId] Error closing socket: ${e.message}", e)
             }
         }
     }
@@ -172,8 +201,8 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
         val json = JSONObject()
         json.put("status", "ok")
         json.put("service", "AutoGLM Helper")
-        json.put("version", "1.0.7")
-        json.put("build", "20260107-content-length-fix")
+        json.put("version", "1.0.8")
+        json.put("build", "20260107-debug-logs")
         json.put("accessibility_enabled", service.isAccessibilityEnabled())
 
         return HttpResponse(200, "application/json", json.toString())
