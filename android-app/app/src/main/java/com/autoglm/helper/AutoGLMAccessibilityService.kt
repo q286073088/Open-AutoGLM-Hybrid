@@ -27,7 +27,7 @@ class AutoGLMAccessibilityService : AccessibilityService() {
         fun getInstance(): AutoGLMAccessibilityService? = instance
     }
 
-    private var httpServer: HttpServer? = null
+    private var httpServer: SimpleHttpServer? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -59,7 +59,7 @@ class AutoGLMAccessibilityService : AccessibilityService() {
 
     private fun startHttpServer() {
         try {
-            httpServer = HttpServer(this, PORT)
+            httpServer = SimpleHttpServer(this, PORT)
             httpServer?.start()
             Log.i(TAG, "HTTP server started on port $PORT")
         } catch (e: Exception) {
