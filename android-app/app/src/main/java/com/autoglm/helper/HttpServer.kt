@@ -14,11 +14,11 @@ class HttpServer(private val service: AutoGLMAccessibilityService, port: Int = 8
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
         val method = session.method
-        
+
         Log.d(TAG, "Request: $method $uri")
 
         return try {
-            when {
+            val response = when {
                 uri == "/status" && method == Method.GET -> handleStatus()
                 uri == "/screenshot" && method == Method.GET -> handleScreenshot()
                 uri == "/tap" && method == Method.POST -> handleTap(session)
@@ -30,13 +30,18 @@ class HttpServer(private val service: AutoGLMAccessibilityService, port: Int = 8
                     """{"error": "Not found"}"""
                 )
             }
+            // 强制关闭连接，避免客户端等待
+            response.addHeader("Connection", "close")
+            response
         } catch (e: Exception) {
             Log.e(TAG, "Error handling request", e)
-            newFixedLengthResponse(
+            val errorResponse = newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
                 "application/json",
                 """{"error": "${e.message}"}"""
             )
+            errorResponse.addHeader("Connection", "close")
+            errorResponse
         }
     }
 
