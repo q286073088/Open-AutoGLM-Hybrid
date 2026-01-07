@@ -79,19 +79,17 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
     }
 
     private fun handleClient(socket: Socket) {
-        val startTime = System.currentTimeMillis()
         try {
-            Log.d(TAG, "[${Thread.currentThread().id}] Handling client connection")
-
             // 设置超时
             socket.soTimeout = 5000  // 5秒读取超时
 
-            val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val inputStream = socket.getInputStream()
             val outputStream = socket.getOutputStream()
+            val reader = BufferedReader(InputStreamReader(inputStream))
 
             // 读取请求行
             val requestLine = reader.readLine() ?: return
-            Log.i(TAG, "[${Thread.currentThread().id}] Request: $requestLine")
+            Log.i(TAG, "Request: $requestLine")
 
             val parts = requestLine.split(" ")
             if (parts.size < 3) {
@@ -115,8 +113,6 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
                 }
             }
 
-            Log.d(TAG, "[${Thread.currentThread().id}] Headers parsed, processing request")
-
             // 读取请求体（如果有）
             var body = ""
             val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
@@ -128,24 +124,19 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
 
             // 处理请求
             val response = handleRequest(method, uri, body)
-            Log.d(TAG, "[${Thread.currentThread().id}] Request processed, sending response")
 
             // 发送响应
             sendResponse(outputStream, response)
 
-            val elapsed = System.currentTimeMillis() - startTime
-            Log.i(TAG, "[${Thread.currentThread().id}] Response sent in ${elapsed}ms")
-
         } catch (e: Exception) {
-            Log.e(TAG, "[${Thread.currentThread().id}] Error handling client", e)
+            Log.e(TAG, "Error handling client", e)
         } finally {
             // 确保关闭连接
             try {
                 socket.close()
-                val elapsed = System.currentTimeMillis() - startTime
-                Log.d(TAG, "[${Thread.currentThread().id}] Connection closed after ${elapsed}ms")
+                Log.d(TAG, "Connection closed")
             } catch (e: Exception) {
-                Log.e(TAG, "[${Thread.currentThread().id}] Error closing socket", e)
+                Log.e(TAG, "Error closing socket", e)
             }
         }
     }
@@ -171,7 +162,7 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
         json.put("status", "ok")
         json.put("service", "AutoGLM Helper")
         json.put("version", "1.0.5")
-        json.put("build", "20260107-debug-http")
+        json.put("build", "20260107-direct-stream")
         json.put("accessibility_enabled", service.isAccessibilityEnabled())
 
         return HttpResponse(200, "application/json", json.toString())
@@ -237,27 +228,27 @@ class SimpleHttpServer(private val service: AutoGLMAccessibilityService, private
 
     private fun sendResponse(outputStream: java.io.OutputStream, response: HttpResponse) {
         try {
-            val body = response.body.toByteArray(Charsets.UTF_8)
-
-            // 构建完整的 HTTP 响应
             val statusLine = "HTTP/1.0 ${response.statusCode} ${getStatusText(response.statusCode)}\r\n"
             val headers = StringBuilder()
             headers.append("Content-Type: ${response.contentType}\r\n")
-            headers.append("Content-Length: ${body.size}\r\n")
+            headers.append("Content-Length: ${response.body.toByteArray(Charsets.UTF_8).size}\r\n")
             headers.append("Connection: close\r\n")
             headers.append("Server: AutoGLM-Helper/1.0\r\n")
             headers.append("\r\n")
 
-            // 一次性写入所有数据
+            // 写入状态行和响应头
             outputStream.write(statusLine.toByteArray(Charsets.UTF_8))
             outputStream.write(headers.toString().toByteArray(Charsets.UTF_8))
-            outputStream.write(body)
+
+            // 写入响应体
+            outputStream.write(response.body.toByteArray(Charsets.UTF_8))
+
+            // 强制刷新到网络
             outputStream.flush()
 
-            Log.d(TAG, "Response sent: ${response.statusCode}, body size: ${body.size}")
+            Log.d(TAG, "Response sent: ${response.statusCode}")
         } catch (e: Exception) {
             Log.e(TAG, "Error sending response", e)
-            throw e
         }
     }
 
