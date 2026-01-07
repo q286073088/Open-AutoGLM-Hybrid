@@ -54,10 +54,22 @@ class HttpServer(private val service: AutoGLMAccessibilityService, port: Int = 8
      */
     private fun createResponse(status: Response.Status, mimeType: String, message: String): Response {
         val response = newFixedLengthResponse(status, mimeType, message)
-        // 关键：必须在创建响应时就设置 Connection: close
+
+        // 尝试多种方法强制关闭连接
         response.addHeader("Connection", "close")
-        // 强制设置为 HTTP/1.0，避免持久连接
         response.addHeader("Server", "AutoGLM-Helper/1.0")
+
+        // 尝试调用 closeConnection 方法（如果存在）
+        try {
+            val method = response.javaClass.getMethod("closeConnection", Boolean::class.javaPrimitiveType)
+            method.invoke(response, true)
+            Log.d(TAG, "Successfully called closeConnection(true)")
+        } catch (e: NoSuchMethodException) {
+            Log.w(TAG, "closeConnection method not found")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to call closeConnection: ${e.message}")
+        }
+
         return response
     }
 
@@ -65,8 +77,8 @@ class HttpServer(private val service: AutoGLMAccessibilityService, port: Int = 8
         val json = JSONObject()
         json.put("status", "ok")
         json.put("service", "AutoGLM Helper")
-        json.put("version", "1.0.2")  // 更新版本号
-        json.put("build", "20260107-nanohttpd-fix")  // 构建标识
+        json.put("version", "1.0.3")  // 更新版本号
+        json.put("build", "20260107-force-close")  // 构建标识
         json.put("accessibility_enabled", service.isAccessibilityEnabled())
 
         return createResponse(
