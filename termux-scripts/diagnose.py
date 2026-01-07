@@ -8,7 +8,7 @@ import socket
 import json
 import sys
 
-def http_get(host='localhost', port=8080, path='/status', timeout=3):
+def http_get(host='localhost', port=8080, path='/status', timeout=30):
     """使用原始 socket 发送 GET 请求"""
     try:
         # 创建 socket 连接
@@ -71,6 +71,10 @@ def http_get(host='localhost', port=8080, path='/status', timeout=3):
 
     except socket.timeout:
         print(f"❌ 连接超时 ({timeout}秒)")
+        print("\n这说明服务器收到了请求但没有及时响应。")
+        print("可能的原因:")
+        print("1. 你还没有安装最新版本的 APK（包含连接修复）")
+        print("2. 服务器处理请求时出现了问题")
         return None
     except ConnectionRefusedError:
         print("❌ 连接被拒绝 - 服务器可能未运行")
