@@ -30,8 +30,14 @@ class HttpServer(private val service: AutoGLMAccessibilityService, port: Int = 8
                     """{"error": "Not found"}"""
                 )
             }
-            // 强制关闭连接，避免客户端等待 (使用 NanoHTTPD 推荐的 API)
-            response.closeConnection(true)
+            // 强制关闭连接，避免客户端等待
+            // 同时使用两种方法确保兼容性
+            response.addHeader("Connection", "close")
+            try {
+                response.closeConnection(true)
+            } catch (e: Exception) {
+                Log.w(TAG, "closeConnection method not available, using addHeader only")
+            }
             Log.i(TAG, "Response sent: $method $uri - Connection: close")
             response
         } catch (e: Exception) {
@@ -41,7 +47,12 @@ class HttpServer(private val service: AutoGLMAccessibilityService, port: Int = 8
                 "application/json",
                 """{"error": "${e.message}"}"""
             )
-            errorResponse.closeConnection(true)
+            errorResponse.addHeader("Connection", "close")
+            try {
+                errorResponse.closeConnection(true)
+            } catch (e: Exception) {
+                Log.w(TAG, "closeConnection method not available")
+            }
             errorResponse
         }
     }
@@ -50,9 +61,10 @@ class HttpServer(private val service: AutoGLMAccessibilityService, port: Int = 8
         val json = JSONObject()
         json.put("status", "ok")
         json.put("service", "AutoGLM Helper")
-        json.put("version", "1.0.0")
+        json.put("version", "1.0.1")  // 更新版本号
+        json.put("build", "20260107-fix-connection-close")  // 构建标识
         json.put("accessibility_enabled", service.isAccessibilityEnabled())
-        
+
         return newFixedLengthResponse(
             Response.Status.OK,
             "application/json",
